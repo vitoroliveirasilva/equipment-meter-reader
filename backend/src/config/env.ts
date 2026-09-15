@@ -5,6 +5,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3333),
   DATABASE_URL: z.string().min(1),
   GEMINI_API_KEY: z.string().optional(),
+  UPLOADS_DIR: z.string().min(1).default('../uploads'),
 });
 
 export const env = envSchema.parse(process.env);
