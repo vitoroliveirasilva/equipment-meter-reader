@@ -5,6 +5,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-equipment_meter_reader}
       POSTGRES_USER: ${POSTGRES_USER:-equipment_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-equipment_password}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:

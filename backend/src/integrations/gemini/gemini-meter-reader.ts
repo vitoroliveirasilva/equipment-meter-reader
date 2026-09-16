@@ -8,15 +8,21 @@ const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_TIMEOUT_MS = 10_000;
 
 export class GeminiMeterReader implements MeterReader {
-  private readonly client: GoogleGenAI;
+  private readonly client: GoogleGenAI | null;
 
-  constructor(apiKey: string) {
-    this.client = new GoogleGenAI({
-      apiKey,
-    });
+  constructor(apiKey?: string) {
+    this.client = apiKey
+      ? new GoogleGenAI({
+          apiKey,
+        })
+      : null;
   }
 
   async read(input: MeterReaderInput): Promise<number> {
+    if (!this.client) {
+      throw new AppError(502, 'AI_PROCESSING_ERROR', 'Gemini API key is not configured');
+    }
+
     try {
       const response = await this.client.models.generateContent({
         model: GEMINI_MODEL,
