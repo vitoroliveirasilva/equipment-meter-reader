@@ -2,6 +2,14 @@ import type { FastifyInstance } from 'fastify';
 
 import { AppError } from './app-error.js';
 
+function hasErrorCode(error: unknown): error is { code: string } {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false;
+  }
+
+  return typeof error.code === 'string';
+}
+
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) {
@@ -11,7 +19,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
-    if ('code' in error && error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+    if (hasErrorCode(error) && error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       return reply.status(400).send({
         error_code: 'INVALID_IMAGE',
         error_description: 'Image exceeds the maximum allowed size',
