@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ParsedImage } from './image-validation.js';
@@ -34,4 +34,10 @@ export async function saveImage({
     filePath,
     imageUrl: `/uploads/${fileName}`,
   };
+}
+
+export async function removeImage(filePath: string): Promise<void> {
+  await rm(filePath, {
+    force: true,
+  });
 }
