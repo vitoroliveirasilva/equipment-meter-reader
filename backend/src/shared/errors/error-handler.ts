@@ -11,6 +11,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
+    if ('code' in error && error.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      return reply.status(400).send({
+        error_code: 'INVALID_IMAGE',
+        error_description: 'Image exceeds the maximum allowed size',
+      });
+    }
+
     app.log.error(error);
 
     return reply.status(500).send({

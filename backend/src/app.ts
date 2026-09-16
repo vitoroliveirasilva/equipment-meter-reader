@@ -12,6 +12,7 @@ interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: true,
+    bodyLimit: 8 * 1024 * 1024,
   });
 
   registerErrorHandler(app);

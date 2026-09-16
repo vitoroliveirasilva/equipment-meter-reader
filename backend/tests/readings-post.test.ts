@@ -315,4 +315,26 @@ describe('POST /readings', () => {
 
     await app.close();
   });
+
+  it('rejects a request body larger than the server limit', async () => {
+    const app = createApp();
+
+    const oversizedPayload = Buffer.alloc(8 * 1024 * 1024 + 1, 1).toString('base64');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/readings',
+      payload: {
+        ...validPayload,
+        image: `data:image/jpeg;base64,${oversizedPayload}`,
+      },
+    });
+
+    const body = response.json<ErrorResponse>();
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error_code).toBe('INVALID_IMAGE');
+
+    await app.close();
+  });
 });
