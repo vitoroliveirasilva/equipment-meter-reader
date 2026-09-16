@@ -13,6 +13,7 @@ describe('environment configuration', () => {
 
     delete process.env.PORT;
     delete process.env.NODE_ENV;
+    delete process.env.UPLOADS_DIR;
   });
 
   afterEach(() => {
@@ -26,6 +27,7 @@ describe('environment configuration', () => {
     expect(env.NODE_ENV).toBe('development');
     expect(env.PORT).toBe(3333);
     expect(env.DATABASE_URL).toBe('postgresql://user:password@localhost:5432/test');
+    expect(env.UPLOADS_DIR).toBe('../uploads');
   });
 
   it('rejects an invalid port', async () => {
