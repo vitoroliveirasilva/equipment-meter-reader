@@ -9,6 +9,8 @@ import type {
   CreateReadingRecord,
   EquipmentReference,
   MeasureType,
+  ReadingConfirmationReference,
+  ReadingHistoryRecord,
   ReadingRepository,
 } from '../src/modules/reading/reading.repository.js';
 import { ReadingService } from '../src/modules/reading/reading.service.js';
@@ -20,8 +22,13 @@ class FakeReadingRepository implements ReadingRepository {
   };
 
   duplicate = false;
+  reading: ReadingConfirmationReference | null = null;
+  confirmResult = true;
 
   createdReadings: CreateReadingRecord[] = [];
+  confirmedReadings: Array<{ id: number; confirmedValue: number }> = [];
+  readings: ReadingHistoryRecord[] = [];
+  lastListMeasureType: MeasureType | undefined;
 
   findEquipmentByCode(code: string): Promise<EquipmentReference | null> {
     if (this.equipment?.code === code) {
@@ -43,6 +50,32 @@ class FakeReadingRepository implements ReadingRepository {
     this.createdReadings.push(data);
 
     return Promise.resolve();
+  }
+
+  findByUuid(uuid: string): Promise<ReadingConfirmationReference | null> {
+    if (this.reading?.uuid === uuid) {
+      return Promise.resolve(this.reading);
+    }
+
+    return Promise.resolve(null);
+  }
+
+  confirmIfPending(id: number, confirmedValue: number): Promise<boolean> {
+    this.confirmedReadings.push({ id, confirmedValue });
+
+    return Promise.resolve(this.confirmResult);
+  }
+
+  listByEquipment(equipmentId: number, measureType?: MeasureType): Promise<ReadingHistoryRecord[]> {
+    void equipmentId;
+
+    this.lastListMeasureType = measureType;
+
+    if (!measureType) {
+      return Promise.resolve(this.readings);
+    }
+
+    return Promise.resolve(this.readings.filter((reading) => reading.measureType === measureType));
   }
 }
 
@@ -103,6 +136,9 @@ describe('ReadingService', () => {
 
     expect(repository.createdReadings).toHaveLength(1);
     expect(repository.createdReadings[0]?.detectedValue).toBe(5487);
+    expect(repository.createdReadings[0]?.imagePath).toBe(
+      join(uploadsDirectory, `${result.readingUuid}.jpg`),
+    );
     expect(meterReader.calls).toBe(1);
 
     const files = await readdir(uploadsDirectory);
@@ -158,5 +194,178 @@ describe('ReadingService', () => {
 
     expect(files).toHaveLength(0);
     expect(repository.createdReadings).toHaveLength(0);
+  });
+
+  it('confirms a reading using the provided value without calling the meter reader', async () => {
+    const repository = new FakeReadingRepository();
+    repository.reading = {
+      id: 10,
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      confirmed: false,
+    };
+
+    const meterReader = new FakeMeterReader();
+    const service = new ReadingService(repository, meterReader, uploadsDirectory);
+
+    await service.confirm(repository.reading.uuid, 5489);
+
+    expect(repository.confirmedReadings).toEqual([
+      {
+        id: 10,
+        confirmedValue: 5489,
+      },
+    ]);
+    expect(meterReader.calls).toBe(0);
+  });
+
+  it('allows confirming a corrected value', async () => {
+    const repository = new FakeReadingRepository();
+    repository.reading = {
+      id: 10,
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      confirmed: false,
+    };
+
+    const meterReader = new FakeMeterReader(5487);
+    const service = new ReadingService(repository, meterReader, uploadsDirectory);
+
+    await service.confirm(repository.reading.uuid, 5499);
+
+    expect(repository.confirmedReadings[0]?.confirmedValue).toBe(5499);
+    expect(meterReader.calls).toBe(0);
+  });
+
+  it('rejects confirmation when the reading does not exist', async () => {
+    const repository = new FakeReadingRepository();
+    const meterReader = new FakeMeterReader();
+    const service = new ReadingService(repository, meterReader, uploadsDirectory);
+
+    await expect(
+      service.confirm('550e8400-e29b-41d4-a716-446655440000', 5489),
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      errorCode: 'READING_NOT_FOUND',
+    });
+
+    expect(repository.confirmedReadings).toHaveLength(0);
+    expect(meterReader.calls).toBe(0);
+  });
+
+  it('rejects an already confirmed reading', async () => {
+    const repository = new FakeReadingRepository();
+    repository.reading = {
+      id: 10,
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      confirmed: true,
+    };
+
+    const meterReader = new FakeMeterReader();
+    const service = new ReadingService(repository, meterReader, uploadsDirectory);
+
+    await expect(service.confirm(repository.reading.uuid, 5489)).rejects.toMatchObject({
+      statusCode: 409,
+      errorCode: 'CONFIRMATION_DUPLICATE',
+    });
+
+    expect(repository.confirmedReadings).toHaveLength(0);
+    expect(meterReader.calls).toBe(0);
+  });
+
+  it('rejects a concurrent duplicate confirmation', async () => {
+    const repository = new FakeReadingRepository();
+    repository.reading = {
+      id: 10,
+      uuid: '550e8400-e29b-41d4-a716-446655440000',
+      confirmed: false,
+    };
+    repository.confirmResult = false;
+
+    const meterReader = new FakeMeterReader();
+    const service = new ReadingService(repository, meterReader, uploadsDirectory);
+
+    await expect(service.confirm(repository.reading.uuid, 5489)).rejects.toMatchObject({
+      statusCode: 409,
+      errorCode: 'CONFIRMATION_DUPLICATE',
+    });
+
+    expect(meterReader.calls).toBe(0);
+  });
+
+  it('lists the readings of an equipment', async () => {
+    const repository = new FakeReadingRepository();
+    repository.readings = [
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440000',
+        measureDatetime: new Date('2026-09-15T10:00:00.000Z'),
+        measureType: 'HOURMETER',
+        detectedValue: 5487,
+        confirmedValue: 5489,
+        confirmed: true,
+        imagePath: '/uploads/550e8400-e29b-41d4-a716-446655440000.jpg',
+      },
+    ];
+
+    const service = new ReadingService(repository, new FakeMeterReader(), uploadsDirectory);
+
+    const result = await service.listByEquipmentCode('EMP-001');
+
+    expect(result).toEqual({
+      equipmentCode: 'EMP-001',
+      readings: [
+        {
+          readingUuid: '550e8400-e29b-41d4-a716-446655440000',
+          measureDatetime: '2026-09-15T10:00:00.000Z',
+          measureType: 'HOURMETER',
+          detectedValue: 5487,
+          confirmedValue: 5489,
+          confirmed: true,
+          imageUrl: '/uploads/550e8400-e29b-41d4-a716-446655440000.jpg',
+        },
+      ],
+    });
+  });
+
+  it('passes the optional measure type filter to the repository', async () => {
+    const repository = new FakeReadingRepository();
+    repository.readings = [
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440000',
+        measureDatetime: new Date('2026-09-15T10:00:00.000Z'),
+        measureType: 'ODOMETER',
+        detectedValue: 12345,
+        confirmedValue: null,
+        confirmed: false,
+        imagePath: '../uploads/550e8400-e29b-41d4-a716-446655440000.png',
+      },
+    ];
+
+    const service = new ReadingService(repository, new FakeMeterReader(), uploadsDirectory);
+
+    const result = await service.listByEquipmentCode('EMP-001', 'ODOMETER');
+
+    expect(repository.lastListMeasureType).toBe('ODOMETER');
+    expect(result.readings[0]?.imageUrl).toBe('/uploads/550e8400-e29b-41d4-a716-446655440000.png');
+  });
+
+  it('rejects listing when the equipment does not exist', async () => {
+    const repository = new FakeReadingRepository();
+    repository.equipment = null;
+
+    const service = new ReadingService(repository, new FakeMeterReader(), uploadsDirectory);
+
+    await expect(service.listByEquipmentCode('EMP-404')).rejects.toMatchObject({
+      statusCode: 404,
+      errorCode: 'EQUIPMENT_NOT_FOUND',
+    });
+  });
+
+  it('rejects listing when the equipment has no readings', async () => {
+    const repository = new FakeReadingRepository();
+    const service = new ReadingService(repository, new FakeMeterReader(), uploadsDirectory);
+
+    await expect(service.listByEquipmentCode('EMP-001')).rejects.toMatchObject({
+      statusCode: 404,
+      errorCode: 'READINGS_NOT_FOUND',
+    });
   });
 });

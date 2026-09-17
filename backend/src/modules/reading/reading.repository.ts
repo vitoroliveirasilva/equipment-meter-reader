@@ -19,12 +19,34 @@ export interface CreateReadingRecord {
   imagePath: string;
 }
 
+export interface ReadingConfirmationReference {
+  id: number;
+  uuid: string;
+  confirmed: boolean;
+}
+
+export interface ReadingHistoryRecord {
+  uuid: string;
+  measureDatetime: Date;
+  measureType: MeasureType;
+  detectedValue: number;
+  confirmedValue: number | null;
+  confirmed: boolean;
+  imagePath: string;
+}
+
 export interface ReadingRepository {
   findEquipmentByCode(code: string): Promise<EquipmentReference | null>;
 
   existsForDay(equipmentId: number, measureType: MeasureType, measureDate: Date): Promise<boolean>;
 
   create(data: CreateReadingRecord): Promise<void>;
+
+  findByUuid(uuid: string): Promise<ReadingConfirmationReference | null>;
+
+  confirmIfPending(id: number, confirmedValue: number): Promise<boolean>;
+
+  listByEquipment(equipmentId: number, measureType?: MeasureType): Promise<ReadingHistoryRecord[]>;
 }
 
 export class PrismaReadingRepository implements ReadingRepository {
@@ -87,5 +109,57 @@ export class PrismaReadingRepository implements ReadingRepository {
 
       throw error;
     }
+  }
+
+  async findByUuid(uuid: string): Promise<ReadingConfirmationReference | null> {
+    return this.prisma.reading.findUnique({
+      where: {
+        uuid,
+      },
+      select: {
+        id: true,
+        uuid: true,
+        confirmed: true,
+      },
+    });
+  }
+
+  async confirmIfPending(id: number, confirmedValue: number): Promise<boolean> {
+    const result = await this.prisma.reading.updateMany({
+      where: {
+        id,
+        confirmed: false,
+      },
+      data: {
+        confirmedValue,
+        confirmed: true,
+      },
+    });
+
+    return result.count === 1;
+  }
+
+  async listByEquipment(
+    equipmentId: number,
+    measureType?: MeasureType,
+  ): Promise<ReadingHistoryRecord[]> {
+    return this.prisma.reading.findMany({
+      where: {
+        equipmentId,
+        ...(measureType ? { measureType } : {}),
+      },
+      select: {
+        uuid: true,
+        measureDatetime: true,
+        measureType: true,
+        detectedValue: true,
+        confirmedValue: true,
+        confirmed: true,
+        imagePath: true,
+      },
+      orderBy: {
+        measureDatetime: 'desc',
+      },
+    });
   }
 }

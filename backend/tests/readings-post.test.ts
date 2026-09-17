@@ -10,6 +10,8 @@ import type {
   CreateReadingRecord,
   EquipmentReference,
   MeasureType,
+  ReadingConfirmationReference,
+  ReadingHistoryRecord,
   ReadingRepository,
 } from '../src/modules/reading/reading.repository.js';
 import { ReadingService } from '../src/modules/reading/reading.service.js';
@@ -52,6 +54,26 @@ class FakeReadingRepository implements ReadingRepository {
     this.createdReadings.push(data);
 
     return Promise.resolve();
+  }
+
+  findByUuid(uuid: string): Promise<ReadingConfirmationReference | null> {
+    void uuid;
+
+    return Promise.resolve(null);
+  }
+
+  confirmIfPending(id: number, confirmedValue: number): Promise<boolean> {
+    void id;
+    void confirmedValue;
+
+    return Promise.resolve(false);
+  }
+
+  listByEquipment(equipmentId: number, measureType?: MeasureType): Promise<ReadingHistoryRecord[]> {
+    void equipmentId;
+    void measureType;
+
+    return Promise.resolve([]);
   }
 }
 

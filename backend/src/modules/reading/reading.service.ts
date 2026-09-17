@@ -1,16 +1,31 @@
 import { randomUUID } from 'node:crypto';
 
-import type { MeterReader } from './meter-reader.js';
+import { AppError } from '../../shared/errors/app-error.js';
 import { removeImage, saveImage } from './image-storage.js';
 import { parseBase64Image } from './image-validation.js';
+import type { MeterReader } from './meter-reader.js';
 import type { MeasureType, ReadingRepository } from './reading.repository.js';
 import type { CreateReadingInput } from './reading.schema.js';
-import { AppError } from '../../shared/errors/app-error.js';
 
 export interface CreateReadingResult {
   readingUuid: string;
   detectedValue: number;
   imageUrl: string;
+}
+
+export interface ReadingHistoryItem {
+  readingUuid: string;
+  measureDatetime: string;
+  measureType: MeasureType;
+  detectedValue: number;
+  confirmedValue: number | null;
+  confirmed: boolean;
+  imageUrl: string;
+}
+
+export interface ListReadingsResult {
+  equipmentCode: string;
+  readings: ReadingHistoryItem[];
 }
 
 export class ReadingService {
@@ -79,10 +94,70 @@ export class ReadingService {
       throw error;
     }
   }
+
+  async confirm(readingUuid: string, confirmedValue: number): Promise<void> {
+    const reading = await this.repository.findByUuid(readingUuid);
+
+    if (!reading) {
+      throw new AppError(404, 'READING_NOT_FOUND', 'Reading was not found');
+    }
+
+    if (reading.confirmed) {
+      throw new AppError(409, 'CONFIRMATION_DUPLICATE', 'Reading has already been confirmed');
+    }
+
+    const confirmed = await this.repository.confirmIfPending(reading.id, confirmedValue);
+
+    if (!confirmed) {
+      throw new AppError(409, 'CONFIRMATION_DUPLICATE', 'Reading has already been confirmed');
+    }
+  }
+
+  async listByEquipmentCode(
+    equipmentCode: string,
+    measureType?: MeasureType,
+  ): Promise<ListReadingsResult> {
+    const equipment = await this.repository.findEquipmentByCode(equipmentCode);
+
+    if (!equipment) {
+      throw new AppError(404, 'EQUIPMENT_NOT_FOUND', 'Equipment was not found');
+    }
+
+    const readings = await this.repository.listByEquipment(equipment.id, measureType);
+
+    if (readings.length === 0) {
+      throw new AppError(404, 'READINGS_NOT_FOUND', 'No readings were found for this equipment');
+    }
+
+    return {
+      equipmentCode: equipment.code,
+      readings: readings.map((reading) => ({
+        readingUuid: reading.uuid,
+        measureDatetime: reading.measureDatetime.toISOString(),
+        measureType: reading.measureType,
+        detectedValue: reading.detectedValue,
+        confirmedValue: reading.confirmedValue,
+        confirmed: reading.confirmed,
+        imageUrl: toImageUrl(reading.imagePath),
+      })),
+    };
+  }
 }
 
 function getMeasureDate(measureDatetime: string): Date {
   const calendarDate = measureDatetime.slice(0, 10);
 
   return new Date(`${calendarDate}T00:00:00.000Z`);
+}
+
+function toImageUrl(imagePath: string): string {
+  const normalizedPath = imagePath.replaceAll('\\', '/');
+
+  if (normalizedPath.startsWith('/uploads/')) {
+    return normalizedPath;
+  }
+
+  const fileName = normalizedPath.split('/').at(-1);
+
+  return `/uploads/${fileName ?? normalizedPath}`;
 }
