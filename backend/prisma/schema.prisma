@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MeasureType {
+  HOURMETER
+  ODOMETER
+}
+
+model Equipment {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique @db.VarChar(50)
+  name      String    @db.VarChar(120)
+  createdAt DateTime  @default(now()) @map("created_at")
+  readings  Reading[]
+
+  @@map("equipment")
+}
+
+model Reading {
+  id              Int         @id @default(autoincrement())
+  uuid            String      @unique @db.Uuid
+  equipmentId     Int         @map("equipment_id")
+  measureType     MeasureType @map("measure_type")
+  measureDatetime DateTime    @map("measure_datetime")
+  measureDate     DateTime    @map("measure_date") @db.Date
+  detectedValue   Int         @map("detected_value")
+  confirmedValue  Int?        @map("confirmed_value")
+  confirmed       Boolean     @default(false)
+  imagePath       String      @map("image_path") @db.VarChar(255)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+
+  @@unique([equipmentId, measureType, measureDate], map: "reading_equipment_type_day_key")
+  @@index([equipmentId, measureDatetime], map: "reading_equipment_datetime_idx")
+  @@map("reading")
+}
