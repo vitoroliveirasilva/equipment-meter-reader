@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 
+import { docsRoutes } from './modules/docs/docs.routes.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { readingRoutes } from './modules/reading/reading.routes.js';
 import type { ReadingService } from './modules/reading/reading.service.js';
@@ -16,6 +17,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   });
 
   registerErrorHandler(app);
+  docsRoutes(app);
   healthRoutes(app);
 
   if (options.readingService) {
