@@ -6,7 +6,11 @@ import { ReadingService } from './modules/reading/reading.service.js';
 import { prisma } from './shared/database/prisma.js';
 
 const readingRepository = new PrismaReadingRepository(prisma);
-const meterReader = new GeminiMeterReader(env.GEMINI_API_KEY);
+const meterReader = new GeminiMeterReader({
+  apiKey: env.GEMINI_API_KEY,
+  model: env.GEMINI_MODEL,
+  timeoutMs: env.GEMINI_TIMEOUT_MS,
+});
 
 const readingService = new ReadingService(readingRepository, meterReader, env.UPLOADS_DIR);
 

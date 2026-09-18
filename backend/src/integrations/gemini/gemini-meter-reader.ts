@@ -1,21 +1,29 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
 import type { MeterReader, MeterReaderInput } from '../../modules/reading/meter-reader.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { parseGeminiMeterResponse } from './gemini-response.js';
 
-const GEMINI_MODEL = 'gemini-3.8-flash';
-const GEMINI_TIMEOUT_MS = 10_000;
+interface GeminiMeterReaderOptions {
+  apiKey: string | undefined;
+  model: string;
+  timeoutMs: number;
+}
 
 export class GeminiMeterReader implements MeterReader {
   private readonly client: GoogleGenAI | null;
+  private readonly model: string;
+  private readonly timeoutMs: number;
 
-  constructor(apiKey?: string) {
-    this.client = apiKey
+  constructor(options: GeminiMeterReaderOptions) {
+    this.client = options.apiKey
       ? new GoogleGenAI({
-          apiKey,
+          apiKey: options.apiKey,
         })
       : null;
+
+    this.model = options.model;
+    this.timeoutMs = options.timeoutMs;
   }
 
   async read(input: MeterReaderInput): Promise<number> {
@@ -25,7 +33,7 @@ export class GeminiMeterReader implements MeterReader {
 
     try {
       const response = await this.client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: this.model,
         contents: [
           {
             text: buildPrompt(input.measureType),
@@ -38,7 +46,9 @@ export class GeminiMeterReader implements MeterReader {
           },
         ],
         config: {
-          temperature: 0,
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.MINIMAL,
+          },
           responseMimeType: 'application/json',
           responseJsonSchema: {
             type: 'object',
@@ -52,7 +62,7 @@ export class GeminiMeterReader implements MeterReader {
             additionalProperties: false,
           },
           httpOptions: {
-            timeout: GEMINI_TIMEOUT_MS,
+            timeout: this.timeoutMs,
           },
         },
       });
@@ -65,6 +75,17 @@ export class GeminiMeterReader implements MeterReader {
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
+      }
+
+      if (error instanceof Error) {
+        const status =
+          'status' in error ? (error as Error & { status?: number }).status : undefined;
+
+        console.error('Gemini request failed', {
+          name: error.name,
+          message: error.message,
+          status,
+        });
       }
 
       throw new AppError(502, 'AI_PROCESSING_ERROR', 'Unable to process the equipment image');
